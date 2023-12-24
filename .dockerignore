@@ -1,0 +1,6 @@
+.git
+.gitignore
+.github
+.env
+.env.example
+.ruff_cache
