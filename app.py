@@ -1,10 +1,15 @@
 import argparse
+import os
+import sys
+from urllib.parse import urlparse
+
+import html2text
 import requests
 from dotenv import load_dotenv
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chat_models import ChatOpenAI
-from bs4 import BeautifulSoup
+from langchain.document_loaders import YoutubeLoader
 from langchain.prompts import ChatPromptTemplate
-from langchain.schema.output_parser import StrOutputParser
 from langchain.schema.runnable import RunnablePassthrough
 
 load_dotenv()
@@ -31,11 +36,32 @@ KEY POINTS:
 
 SUMMARY_PROMPT = ChatPromptTemplate.from_template(SUMMARY_TEMPLATE)
 
+h = html2text.HTML2Text()
+h.ignore_links = True
 
-def extract_text_from_url(url):
+YOUTUBE_URLS = ["www.youtube.com", "youtube.com", "youtu.be"]
+
+
+def extract_text_from_url(url: str) -> str:
     response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    return soup.get_text()
+    return h.handle(response.text)
+
+
+def extract_text_from_youtube(url: str) -> str:
+    loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
+    return loader.load()
+
+
+def extract_text(source: str) -> str:
+    try:
+        parsed_url = urlparse(source)
+        if parsed_url.netloc in YOUTUBE_URLS:
+            return extract_text_from_youtube(source)
+        else:
+            return extract_text_from_url(source)
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred while trying to fetch the text: {e}")
+        sys.exit(2)
 
 
 def main():
@@ -43,15 +69,16 @@ def main():
     parser.add_argument("url", help="The URL to create a summary from")
     args = parser.parse_args()
 
-    summary = (
-        RunnablePassthrough.assign(text=lambda x: extract_text_from_url(x["url"]))
+    (
+        RunnablePassthrough.assign(text=lambda x: extract_text(x["url"]))
         | SUMMARY_PROMPT
-        | ChatOpenAI(temperature=1, model_name=MODEL_NAME, streaming=True)
-        | StrOutputParser()
+        | ChatOpenAI(temperature=1, model_name=MODEL_NAME, streaming=True, callbacks=[StreamingStdOutCallbackHandler()])
     ).invoke({"url": args.url})
-
-    print(summary)
 
 
 if __name__ == "__main__":
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Error: The OPENAI_API_KEY environment variable is not set.")
+        sys.exit(1)
+
     main()
