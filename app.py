@@ -7,14 +7,14 @@ import html2text
 import requests
 from dotenv import load_dotenv
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chat_models import ChatOpenAI
-from langchain.document_loaders import YoutubeLoader
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
+from langchain_community.document_loaders import PyPDFLoader, YoutubeLoader
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
-MODEL_NAME = "gpt-4-1106-preview"
+MODEL_NAME = "gpt-4-turbo-preview"
 SUMMARY_TEMPLATE = """
 You are tasked with writing a comprehensive summary the following text so that readers will have a full understanding of the text, without need of referencing the source material.
 Your summary should reflect the length of the source material, and provide enough details, that the reader can fully understand the subject and speak of it at a high-level.
@@ -46,6 +46,9 @@ def extract_text_from_url(url: str) -> str:
     response = requests.get(url)
     return h.handle(response.text)
 
+def extract_text_from_pdf(url: str) -> str:
+    loader = PyPDFLoader(url)
+    return loader.load()
 
 def extract_text_from_youtube(url: str) -> str:
     loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
@@ -57,6 +60,8 @@ def extract_text(source: str) -> str:
         parsed_url = urlparse(source)
         if parsed_url.netloc in YOUTUBE_URLS:
             return extract_text_from_youtube(source)
+        elif parsed_url.path.endswith(".pdf"):
+            return extract_text_from_pdf(source)
         else:
             return extract_text_from_url(source)
     except requests.exceptions.RequestException as e:
@@ -72,7 +77,10 @@ def main():
     (
         RunnablePassthrough.assign(text=lambda x: extract_text(x["url"]))
         | SUMMARY_PROMPT
-        | ChatOpenAI(temperature=1, model_name=MODEL_NAME, streaming=True, callbacks=[StreamingStdOutCallbackHandler()])
+        | ChatOpenAI(temperature=1, 
+                     model_name=MODEL_NAME, 
+                     streaming=True, 
+                     callbacks=[StreamingStdOutCallbackHandler()])
     ).invoke({"url": args.url})
 
 
