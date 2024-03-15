@@ -43,12 +43,18 @@ YOUTUBE_URLS = ["www.youtube.com", "youtube.com", "youtu.be"]
 
 
 def extract_text_from_url(url: str) -> str:
-    response = requests.get(url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
+        "Content-Type": "text/html; charset=UTF-8",
+    }
+    response = requests.get(url, headers=headers)
     return h.handle(response.text)
+
 
 def extract_text_from_pdf(url: str) -> str:
     loader = PyPDFLoader(url)
     return loader.load()
+
 
 def extract_text_from_youtube(url: str) -> str:
     loader = YoutubeLoader.from_youtube_url(url, add_video_info=False)
@@ -77,10 +83,12 @@ def main():
     (
         RunnablePassthrough.assign(text=lambda x: extract_text(x["url"]))
         | SUMMARY_PROMPT
-        | ChatOpenAI(temperature=1, 
-                     model_name=MODEL_NAME, 
-                     streaming=True, 
-                     callbacks=[StreamingStdOutCallbackHandler()])
+        | ChatOpenAI(
+            temperature=1,
+            model_name=MODEL_NAME,
+            streaming=True,
+            callbacks=[StreamingStdOutCallbackHandler()],
+        )
     ).invoke({"url": args.url})
 
 
